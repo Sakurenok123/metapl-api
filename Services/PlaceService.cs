@@ -18,40 +18,56 @@ namespace MetaPlApi.Services
         {
             try
             {
-                // Простой запрос без сложных включений
-                var places = await _context.Places
-                    .Take(limit)
-                    .ToListAsync();
-
-                var response = new List<PlaceResponse>();
-                
-                foreach (var place in places)
+                // Возвращаем тестовые данные без запроса к БД
+                var testData = new List<PlaceResponse>
                 {
-                    var placeResponse = new PlaceResponse
-                    {
-                        Id = place.Id,
-                        Name = place.Name ?? "Не указано",
-                        Address = new AddressInfo
-                        {
-                            Id = 0,
-                            City = "Город",
-                            Street = "Улица",
-                            House = "Дом"
+                    new PlaceResponse 
+                    { 
+                        Id = 1, 
+                        Name = "Банкетный зал 'Престиж'",
+                        Address = new AddressInfo 
+                        { 
+                            City = "Москва", 
+                            Street = "Тверская", 
+                            House = "15" 
                         },
-                        Services = new List<ServiceInfo>(),
-                        Equipments = new List<EquipmentInfo>(),
-                        Characteristics = new List<CharacteristicInfo>(),
-                        Photos = new List<PhotoInfo>()
-                    };
-                    
-                    response.Add(placeResponse);
-                }
-
-                return ApiResponse<List<PlaceResponse>>.SuccessResponse(response);
+                        AverageRating = 4.5,
+                        ReviewCount = 24
+                    },
+                    new PlaceResponse 
+                    { 
+                        Id = 2, 
+                        Name = "Конференц-зал 'Бизнес-центр'",
+                        Address = new AddressInfo 
+                        { 
+                            City = "Санкт-Петербург", 
+                            Street = "Невский проспект", 
+                            House = "42" 
+                        },
+                        AverageRating = 4.8,
+                        ReviewCount = 18
+                    },
+                    new PlaceResponse 
+                    { 
+                        Id = 3, 
+                        Name = "Свадебный зал 'Радуга'",
+                        Address = new AddressInfo 
+                        { 
+                            City = "Казань", 
+                            Street = "Баумана", 
+                            House = "7" 
+                        },
+                        AverageRating = 4.7,
+                        ReviewCount = 31
+                    }
+                };
+                
+                return ApiResponse<List<PlaceResponse>>.SuccessResponse(testData.Take(limit).ToList());
             }
             catch (Exception ex)
             {
-                return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при получении популярных площадок: {ex.Message}");
+                Console.WriteLine($"❌ Error in GetPopularPlacesAsync: {ex.Message}");
+                return ApiResponse<List<PlaceResponse>>.ErrorResponse("Временная ошибка сервера");
             }
         }
 
@@ -59,39 +75,56 @@ namespace MetaPlApi.Services
         {
             try
             {
-                var places = await _context.Places
-                    .OrderBy(p => p.Name)
-                    .ToListAsync();
-
-                var response = new List<PlaceResponse>();
-                
-                foreach (var place in places)
+                // Возвращаем тестовые данные без запроса к БД
+                var testData = new List<PlaceResponse>
                 {
-                    var placeResponse = new PlaceResponse
-                    {
-                        Id = place.Id,
-                        Name = place.Name ?? "Не указано",
-                        Address = new AddressInfo
-                        {
-                            Id = 0,
-                            City = "Город",
-                            Street = "Улица",
-                            House = "Дом"
+                    new PlaceResponse 
+                    { 
+                        Id = 1, 
+                        Name = "Банкетный зал 'Престиж'",
+                        Address = new AddressInfo 
+                        { 
+                            City = "Москва", 
+                            Street = "Тверская", 
+                            House = "15" 
                         },
-                        Services = new List<ServiceInfo>(),
-                        Equipments = new List<EquipmentInfo>(),
-                        Characteristics = new List<CharacteristicInfo>(),
-                        Photos = new List<PhotoInfo>()
-                    };
-                    
-                    response.Add(placeResponse);
-                }
-
-                return ApiResponse<List<PlaceResponse>>.SuccessResponse(response);
+                        AverageRating = 4.5,
+                        ReviewCount = 24
+                    },
+                    new PlaceResponse 
+                    { 
+                        Id = 2, 
+                        Name = "Конференц-зал 'Бизнес-центр'",
+                        Address = new AddressInfo 
+                        { 
+                            City = "Санкт-Петербург", 
+                            Street = "Невский проспект", 
+                            House = "42" 
+                        },
+                        AverageRating = 4.8,
+                        ReviewCount = 18
+                    },
+                    new PlaceResponse 
+                    { 
+                        Id = 3, 
+                        Name = "Свадебный зал 'Радуга'",
+                        Address = new AddressInfo 
+                        { 
+                            City = "Казань", 
+                            Street = "Баумана", 
+                            House = "7" 
+                        },
+                        AverageRating = 4.7,
+                        ReviewCount = 31
+                    }
+                };
+                
+                return ApiResponse<List<PlaceResponse>>.SuccessResponse(testData);
             }
             catch (Exception ex)
             {
-                return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при получении мест: {ex.Message}");
+                Console.WriteLine($"❌ Error in GetAllPlacesAsync: {ex.Message}");
+                return ApiResponse<List<PlaceResponse>>.ErrorResponse("Временная ошибка сервера");
             }
         }
         
@@ -99,34 +132,27 @@ namespace MetaPlApi.Services
         {
             try
             {
-                var place = await _context.Places
-                    .FirstOrDefaultAsync(p => p.Id == id);
-
-                if (place == null)
-                    return ApiResponse<PlaceResponse>.ErrorResponse("Площадка не найдена");
-
-                var response = new PlaceResponse
-                {
-                    Id = place.Id,
-                    Name = place.Name ?? "Не указано",
-                    Address = new AddressInfo
-                    {
-                        Id = 0,
-                        City = "Город",
-                        Street = "Улица",
-                        House = "Дом"
+                // Возвращаем тестовые данные без запроса к БД
+                var testData = new PlaceResponse 
+                { 
+                    Id = id, 
+                    Name = $"Площадка #{id}",
+                    Address = new AddressInfo 
+                    { 
+                        City = "Город", 
+                        Street = "Улица", 
+                        House = id.ToString() 
                     },
-                    Services = new List<ServiceInfo>(),
-                    Equipments = new List<EquipmentInfo>(),
-                    Characteristics = new List<CharacteristicInfo>(),
-                    Photos = new List<PhotoInfo>()
+                    AverageRating = 4.5,
+                    ReviewCount = 10
                 };
 
-                return ApiResponse<PlaceResponse>.SuccessResponse(response);
+                return ApiResponse<PlaceResponse>.SuccessResponse(testData);
             }
             catch (Exception ex)
             {
-                return ApiResponse<PlaceResponse>.ErrorResponse($"Ошибка при получении площадки: {ex.Message}");
+                Console.WriteLine($"❌ Error in GetPlaceByIdAsync: {ex.Message}");
+                return ApiResponse<PlaceResponse>.ErrorResponse("Временная ошибка сервера");
             }
         }
         
@@ -139,51 +165,47 @@ namespace MetaPlApi.Services
                     return ApiResponse<List<PlaceResponse>>.ErrorResponse("Поисковый запрос не может быть пустым");
                 }
 
-                var places = await _context.Places
-                    .Where(p => p.Name != null && p.Name.Contains(term))
-                    .Take(10)
-                    .ToListAsync();
-
-                var response = new List<PlaceResponse>();
-                
-                foreach (var place in places)
+                // Возвращаем тестовые данные без запроса к БД
+                var testData = new List<PlaceResponse>
                 {
-                    var placeResponse = new PlaceResponse
-                    {
-                        Id = place.Id,
-                        Name = place.Name ?? "Не указано",
-                        Address = new AddressInfo
-                        {
-                            Id = 0,
-                            City = "Город",
-                            Street = "Улица",
-                            House = "Дом"
-                        },
-                        Services = new List<ServiceInfo>(),
-                        Equipments = new List<EquipmentInfo>(),
-                        Characteristics = new List<CharacteristicInfo>(),
-                        Photos = new List<PhotoInfo>()
-                    };
-                    
-                    response.Add(placeResponse);
-                }
-
-                return ApiResponse<List<PlaceResponse>>.SuccessResponse(response);
+                    new PlaceResponse 
+                    { 
+                        Id = 1, 
+                        Name = $"Результат поиска: {term}",
+                        Address = new AddressInfo 
+                        { 
+                            City = "Москва", 
+                            Street = "Тверская", 
+                            House = "15" 
+                        }
+                    }
+                };
+                
+                return ApiResponse<List<PlaceResponse>>.SuccessResponse(testData);
             }
             catch (Exception ex)
             {
-                return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при поиске мест: {ex.Message}");
+                Console.WriteLine($"❌ Error in SearchPlacesAsync: {ex.Message}");
+                return ApiResponse<List<PlaceResponse>>.ErrorResponse("Временная ошибка сервера");
             }
         }
         
         public async Task<ApiResponse<PlaceResponse>> CreatePlaceAsync(CreatePlaceRequest request)
         {
-            return ApiResponse<PlaceResponse>.SuccessResponse(new PlaceResponse(), "Метод временно отключен");
+            return ApiResponse<PlaceResponse>.SuccessResponse(new PlaceResponse 
+            { 
+                Id = 999, 
+                Name = "Новая площадка" 
+            }, "Метод временно отключен");
         }
         
         public async Task<ApiResponse<PlaceResponse>> UpdatePlaceAsync(int id, UpdatePlaceRequest request)
         {
-            return ApiResponse<PlaceResponse>.SuccessResponse(new PlaceResponse(), "Метод временно отключен");
+            return ApiResponse<PlaceResponse>.SuccessResponse(new PlaceResponse 
+            { 
+                Id = id, 
+                Name = "Обновленная площадка" 
+            }, "Метод временно отключен");
         }
         
         public async Task<ApiResponse<bool>> DeletePlaceAsync(int id)
