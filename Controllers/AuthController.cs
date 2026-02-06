@@ -64,6 +64,7 @@ namespace MetaPlApi.Controllers
         }
         
         [HttpPost("change-password")]
+        [Authorize]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
         {
             if (!ModelState.IsValid)
@@ -76,7 +77,12 @@ namespace MetaPlApi.Controllers
                 return BadRequest(ApiResponse<bool>.ErrorResponse("Ошибка валидации", errors));
             }
             
-            var userId = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value);
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                return Unauthorized(ApiResponse<bool>.ErrorResponse("Пользователь не авторизован"));
+            }
+            
             var response = await _authService.ChangePasswordAsync(userId, request);
             
             if (!response.Success)
