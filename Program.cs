@@ -27,11 +27,11 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
                              "SSL Mode=Require;Trust Server Certificate=true;";
         
         builder.Configuration["ConnectionStrings:DefaultConnection"] = connectionString;
-        Console.WriteLine($"Database configured from DATABASE_URL");
+        Console.WriteLine($"✓ Database configured from DATABASE_URL");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Error parsing DATABASE_URL: {ex.Message}");
+        Console.WriteLine($"✗ Error parsing DATABASE_URL: {ex.Message}");
     }
 }
 
@@ -59,11 +59,11 @@ if (!string.IsNullOrEmpty(connectionString))
 {
     builder.Services.AddDbContext<MetaplatformeContext>(options =>
         options.UseNpgsql(connectionString));
-    Console.WriteLine($"Database context registered");
+    Console.WriteLine($"✓ Database context registered");
 }
 else
 {
-    Console.WriteLine($"WARNING: No database connection string!");
+    Console.WriteLine($"✗ WARNING: No database connection string!");
 }
 
 // Сервисы
@@ -75,9 +75,22 @@ builder.Services.AddScoped<IStatusService, StatusService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddHttpContextAccessor();
 
-// CORS
+// CORS - конкретная настройка для вашего Netlify
 builder.Services.AddCors(options =>
 {
+    options.AddPolicy("NetlifyCors", policy =>
+    {
+        policy.WithOrigins(
+                "https://clever-basbousa-2c3b30.netlify.app",
+                "http://localhost:3000",
+                "http://localhost:3001"
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
+    });
+    
+    // Также добавляем AllowAll для тестирования
     options.AddPolicy("AllowAll", policy =>
     {
         policy.AllowAnyOrigin()
@@ -89,11 +102,14 @@ builder.Services.AddCors(options =>
 // Создание приложения
 var app = builder.Build();
 
-// Middleware
+// Middleware в правильном порядке
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
+
+// ВАЖНО: CORS должен быть ПЕРЕД UseAuthorization и MapControllers
+app.UseCors("AllowAll"); // Используем AllowAll для тестирования
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -103,17 +119,22 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseHttpsRedirection();
-app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 
 // Тестовые endpoint'ы
 app.MapGet("/", () => "MetaPl API is running!");
-app.MapGet("/test", () => new { status = "OK", time = DateTime.UtcNow });
+app.MapGet("/test", () => new { 
+    status = "OK", 
+    time = DateTime.UtcNow,
+    cors = "AllowAll enabled",
+    database = !string.IsNullOrEmpty(connectionString) ? "Connected" : "Not connected"
+});
 app.MapGet("/health", () => Results.Ok(new { 
     status = "Healthy", 
     timestamp = DateTime.UtcNow,
-    environment = app.Environment.EnvironmentName
+    environment = app.Environment.EnvironmentName,
+    api = "MetaPl API"
 }));
 
 Console.WriteLine("=== MetaPl API Starting ===");
