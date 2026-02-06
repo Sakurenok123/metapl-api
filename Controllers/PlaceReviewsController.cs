@@ -46,7 +46,6 @@ namespace MetaPlApi.Controllers
         }
 
         [HttpPost]
-        [Authorize]
         public async Task<IActionResult> AddReview(int placeId, [FromBody] AddReviewRequest request)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
