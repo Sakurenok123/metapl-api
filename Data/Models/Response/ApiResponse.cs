@@ -5,14 +5,14 @@ namespace MetaPlApi.Models.DTOs.Responses
     public class ApiResponse<T>
     {
         public bool Success { get; set; }
-        public string Message { get; set; }
-        public T Data { get; set; }
+        public string? Message { get; set; }
+        public T? Data { get; set; }
         
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public List<string> Errors { get; set; }
+        public List<string>? Errors { get; set; }
         
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public PaginationInfo Pagination { get; set; }
+        public PaginationInfo? Pagination { get; set; }
         
         public static ApiResponse<T> SuccessResponse(T data, string message = "Успешно")
         {
@@ -24,7 +24,7 @@ namespace MetaPlApi.Models.DTOs.Responses
             };
         }
         
-        public static ApiResponse<T> ErrorResponse(string message, List<string> errors = null)
+        public static ApiResponse<T> ErrorResponse(string message, List<string>? errors = null)
         {
             return new ApiResponse<T>
             {
@@ -49,19 +49,9 @@ namespace MetaPlApi.Models.DTOs.Responses
     public class AuthResponse
     {
         public int UserId { get; set; }
-        public string Login { get; set; }
-        public string Role { get; set; }
-        public string Token { get; set; }
+        public string? Login { get; set; }
+        public string? Role { get; set; }
+        public string? Token { get; set; }
         public DateTime TokenExpiry { get; set; }
-    }
-    
-    public class UserResponse
-    {
-        public int Id { get; set; }
-        public string Login { get; set; }
-        public string Role { get; set; }
-        public int RoleId { get; set; }
-        public int ApplicationsId { get; set; }
-        public DateTime? CreatedAt { get; set; }
     }
 }
