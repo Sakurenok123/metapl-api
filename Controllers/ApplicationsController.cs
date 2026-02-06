@@ -5,12 +5,12 @@ using MetaPlApi.Data.Entities;
 using MetaPlApi.Models.DTOs.Requests;
 using MetaPlApi.Models.DTOs.Responses;
 using System.Security.Claims;
-using MetaPlApi.Services;
 
 namespace MetaPlApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class ApplicationsController : ControllerBase
     {
         private readonly MetaplatformeContext _context;
@@ -21,6 +21,7 @@ namespace MetaPlApi.Controllers
         }
 
         [HttpGet]
+        [Authorize(Roles = "Admin,Manager")]
         public async Task<IActionResult> GetAllApplications([FromQuery] ApplicationFilterRequest filter)
         {
             try
@@ -188,86 +189,6 @@ namespace MetaPlApi.Controllers
                 };
 
                 return Ok(ApiResponse<ApplicationResponse>.SuccessResponse(response));
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(ApiResponse<object>.ErrorResponse($"Ошибка при получении заявки: {ex.Message}"));
-            }
-        }
-
-        // НОВЫЙ МЕТОД: Получить заявку с полными данными
-        [HttpGet("{id}/full")]
-        public async Task<IActionResult> GetApplicationWithFullDetails(int id)
-        {
-            try
-            {
-                var application = await _context.Applications
-                    .Include(a => a.Status)
-                    .Include(a => a.Event)
-                    .ThenInclude(e => e.EventType)
-                    .Include(a => a.Place)
-                    .ThenInclude(p => p.Address)
-                    .Include(a => a.ServicesApplications)
-                    .ThenInclude(sa => sa.Service)
-                    .Include(a => a.User)
-                    .ThenInclude(u => u.Role)
-                    .FirstOrDefaultAsync(a => a.Id == id);
-
-                if (application == null)
-                {
-                    return NotFound(ApiResponse<object>.ErrorResponse("Заявка не найдена"));
-                }
-
-                var response = new
-                {
-                    application.Id,
-                    application.StatusId,
-                    Status = application.Status?.Name,
-                    application.EventId,
-                    Event = application.Event != null ? new
-                    {
-                        application.Event.Id,
-                        application.Event.Name,
-                        application.Event.EventTypeId,
-                        EventType = application.Event.EventType?.NameEventsType
-                    } : null,
-                    application.PlaceId,
-                    Place = application.Place != null ? new
-                    {
-                        application.Place.Id,
-                        application.Place.Name,
-                        Address = application.Place.Address != null ? new
-                        {
-                            application.Place.Address.Id,
-                            application.Place.Address.City,
-                            application.Place.Address.Street,
-                            application.Place.Address.House,
-                            FullAddress = $"{application.Place.Address.City}, {application.Place.Address.Street}, {application.Place.Address.House}"
-                        } : null
-                    } : null,
-                    Services = application.ServicesApplications.Select(sa => new
-                    {
-                        sa.ServiceId,
-                        ServiceName = sa.Service?.Name
-                    }).ToList(),
-                    ServiceIds = application.ServicesApplications.Select(sa => sa.ServiceId).ToList(),
-                    application.DateCreate,
-                    application.DateUpdate,
-                    application.ContactPhone,
-                    application.GuestCount,
-                    application.EventDate,
-                    application.EventTime,
-                    application.Duration,
-                    application.AdditionalInfo,
-                    User = application.User != null ? new
-                    {
-                        application.User.Id,
-                        application.User.Login,
-                        Role = application.User.Role?.Name
-                    } : null
-                };
-
-                return Ok(ApiResponse<object>.SuccessResponse(response));
             }
             catch (Exception ex)
             {
@@ -551,7 +472,6 @@ namespace MetaPlApi.Controllers
             }
         }
 
-        // Мои заявки
         [HttpGet("my")]
         public async Task<IActionResult> GetMyApplications()
         {
@@ -613,83 +533,8 @@ namespace MetaPlApi.Controllers
             }
         }
 
-        // НОВЫЙ МЕТОД: Мои заявки с полными данными
-        [HttpGet("my/full")]
-        public async Task<IActionResult> GetMyApplicationsWithFullDetails()
-        {
-            try
-            {
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
-                {
-                    return Unauthorized(ApiResponse<object>.ErrorResponse("Пользователь не авторизован"));
-                }
-
-                var applications = await _context.Applications
-                    .Where(a => a.UserId == userId)
-                    .Include(a => a.Status)
-                    .Include(a => a.Event)
-                    .ThenInclude(e => e.EventType)
-                    .Include(a => a.Place)
-                    .ThenInclude(p => p.Address)
-                    .Include(a => a.ServicesApplications)
-                    .ThenInclude(sa => sa.Service)
-                    .OrderByDescending(a => a.DateCreate)
-                    .ToListAsync();
-
-                var response = applications.Select(a => new
-                {
-                    a.Id,
-                    a.StatusId,
-                    Status = a.Status?.Name,
-                    a.EventId,
-                    Event = a.Event != null ? new
-                    {
-                        a.Event.Id,
-                        a.Event.Name,
-                        a.Event.EventTypeId,
-                        EventType = a.Event.EventType?.NameEventsType
-                    } : null,
-                    a.PlaceId,
-                    Place = a.Place != null ? new
-                    {
-                        a.Place.Id,
-                        a.Place.Name,
-                        Address = a.Place.Address != null ? new
-                        {
-                            a.Place.Address.Id,
-                            a.Place.Address.City,
-                            a.Place.Address.Street,
-                            a.Place.Address.House,
-                            FullAddress = $"{a.Place.Address.City}, {a.Place.Address.Street}, {a.Place.Address.House}"
-                        } : null
-                    } : null,
-                    Services = a.ServicesApplications.Select(sa => new
-                    {
-                        sa.ServiceId,
-                        ServiceName = sa.Service?.Name
-                    }).ToList(),
-                    ServiceIds = a.ServicesApplications.Select(sa => sa.ServiceId).ToList(),
-                    a.DateCreate,
-                    a.DateUpdate,
-                    a.ContactPhone,
-                    a.GuestCount,
-                    a.EventDate,
-                    a.EventTime,
-                    a.Duration,
-                    a.AdditionalInfo
-                }).ToList();
-
-                return Ok(ApiResponse<object>.SuccessResponse(response));
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(ApiResponse<object>.ErrorResponse($"Ошибка при получении заявок: {ex.Message}"));
-            }
-        }
-
-        // Статистика заявок
         [HttpGet("stats")]
+        [Authorize(Roles = "Admin,Manager")]
         public async Task<IActionResult> GetApplicationStats()
         {
             try
