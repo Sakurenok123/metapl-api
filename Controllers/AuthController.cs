@@ -64,7 +64,6 @@ namespace MetaPlApi.Controllers
         }
         
         [HttpPost("change-password")]
-        [Authorize]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
         {
             if (!ModelState.IsValid)
