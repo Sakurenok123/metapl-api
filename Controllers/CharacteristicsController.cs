@@ -19,30 +19,17 @@ namespace MetaPlApi.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAllCharacteristics()
         {
-            try
+            var characteristics = await _context.Characteristics
+                .OrderBy(c => c.Name)
+                .ToListAsync();
+                
+            var response = characteristics.Select(c => new CharacteristicInfo
             {
-                Console.WriteLine("Getting all characteristics");
-                
-                var characteristics = await _context.Characteristics
-                    .OrderBy(c => c.Name)
-                    .ToListAsync();
-                
-                Console.WriteLine($"Found {characteristics.Count} characteristics");
-                
-                var response = characteristics.Select(c => new CharacteristicInfo
-                {
-                    Id = c.Id,
-                    Name = c.Name ?? "Не указано"
-                }).ToList();
-                
-                return Ok(ApiResponse<List<CharacteristicInfo>>.SuccessResponse(response));
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"ERROR in GetAllCharacteristics: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
-                return StatusCode(500, ApiResponse<List<CharacteristicInfo>>.ErrorResponse($"Ошибка при получении характеристик: {ex.Message}"));
-            }
+                Id = c.Id,
+                Name = c.Name ?? "Не указано"
+            }).ToList();
+            
+            return Ok(ApiResponse<List<CharacteristicInfo>>.SuccessResponse(response));
         }
     }
 }
