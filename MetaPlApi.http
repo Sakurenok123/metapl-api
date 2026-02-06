@@ -1,0 +1,6 @@
+@MetaPlApi_HostAddress = http://localhost:5023
+
+GET {{MetaPlApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,85 @@
+# .NET build outputs
+bin/
+obj/
+[Bb]uild/
+[Bb]uilds/
+publish/
+*.user
+*.suo
+*.cache
+*.docstates
+
+# Visual Studio
+.vs/
+*.userprefs
+*.[Cc]ache
+*.bak
+*.log
+*.lib
+*.sbr
+*.obj
+*.pdb
+*.ilk
+*.meta
+*.ncb
+*.opensdf
+*.sdf
+*.dbmdl
+*.dbproj.schemaview
+*.pfx
+*.publishsettings
+
+# Rider
+.idea/
+*.sln.iml
+
+# User-specific files
+*.rsuser
+*.userosscache
+*.sln.ide/
+
+# Project files
+*.csproj.user
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Runtime data
+*.pid
+*.seed
+*.pid.lock
+
+# App settings
+appsettings.Development.json
+
+# Logs
+*.log
+logs/
+
+# Temp
+temp/
+tmp/
+
+# Secrets
+secrets.json
+*.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
