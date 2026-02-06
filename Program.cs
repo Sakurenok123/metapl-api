@@ -6,20 +6,13 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ========== КОНФИГУРАЦИЯ ДЛЯ RAILWAY ==========
-// Получаем URL фронтенда из окружения или используем Netlify по умолчанию
-var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "https://clever-basbousa-2c3b30.netlify.app";
+// Конфигурация для Railway
 var railwayPort = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://*:{railwayPort}");
 
-// Настраиваем Kestrel для Railway
-builder.WebHost.UseKestrel(options =>
-{
-    options.ListenAnyIP(int.Parse(railwayPort));
-});
-Console.WriteLine($"✓ Railway environment detected, port: {railwayPort}");
-Console.WriteLine($"✓ Frontend URL: {frontendUrl}");
+Console.WriteLine($"Starting on port: {railwayPort}");
 
-// Переопределяем строку подключения из Railway
+// База данных
 var railwayDbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(railwayDbUrl))
 {
@@ -36,7 +29,7 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
                                      "SSL Mode=Require;Trust Server Certificate=true;";
         
         builder.Configuration["ConnectionStrings:DefaultConnection"] = updatedConnectionString;
-        Console.WriteLine($"✓ Database configured from DATABASE_URL");
+        Console.WriteLine($"✓ Database configured");
     }
     catch (Exception ex)
     {
@@ -44,28 +37,25 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
     }
 }
 
-// ========== ОСНОВНЫЕ СЕРВИСЫ ==========
+// Основные сервисы
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-        options.JsonSerializerOptions.WriteIndented = builder.Environment.IsDevelopment();
+        options.JsonSerializerOptions.WriteIndented = true;
     });
 
 builder.Services.AddEndpointsApiExplorer();
-
-// Swagger
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo 
     { 
         Title = "MetaPl API", 
-        Version = "v1",
-        Description = "API для платформы метаплатформ"
+        Version = "v1" 
     });
 });
 
-// ========== БАЗА ДАННЫХ ==========
+// База данных
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {
@@ -75,10 +65,13 @@ if (!string.IsNullOrEmpty(connectionString))
 }
 else
 {
-    Console.WriteLine($"✗ WARNING: Database connection string is not set!");
+    Console.WriteLine($"✗ WARNING: No database connection string!");
+    builder.Services.AddDbContext<MetaplatformeContext>(options =>
+        options.UseInMemoryDatabase("TestDb"));
+    Console.WriteLine($"✓ Using in-memory database for testing");
 }
 
-// ========== СЕРВИСЫ ==========
+// Сервисы
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<IApplicationService, ApplicationService>();
@@ -87,46 +80,26 @@ builder.Services.AddScoped<IStatusService, StatusService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddHttpContextAccessor();
 
-// ========== CORS ==========
-// Конкретная настройка CORS для Netlify и локальной разработки
+// CORS - разрешаем всё для тестирования
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowNetlifyAndLocal", policy =>
+    options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins(
-                "https://clever-basbousa-2c3b30.netlify.app", // Ваш Netlify домен
-                "http://localhost:3000",                       // Локальный фронтенд
-                "http://localhost:3001"
-            )
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials()
-            .WithExposedHeaders("Content-Disposition");
+        policy.AllowAnyOrigin()
+               .AllowAnyMethod()
+               .AllowAnyHeader();
     });
 });
 
-// ========== СОЗДАНИЕ ПРИЛОЖЕНИЯ ==========
+// Создание приложения
 var app = builder.Build();
 
-// Логирование конфигурации
-Console.WriteLine($"=== MetaPl API Configuration ===");
-Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
-Console.WriteLine($"Port: {railwayPort}");
-Console.WriteLine($"Frontend: {frontendUrl}");
-Console.WriteLine($"Database configured: {!string.IsNullOrEmpty(connectionString)}");
-
-// ========== КОНФИГУРАЦИЯ ПАЙПЛАЙНА ==========
+// Middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
-else
-{
-    app.UseExceptionHandler("/error");
-    app.UseHsts();
-}
 
-// Включаем Swagger всегда для удобства тестирования
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -136,28 +109,15 @@ app.UseSwaggerUI(c =>
 
 app.UseHttpsRedirection();
 
-// ВАЖНО: CORS должен быть перед UseAuthorization и MapControllers
-app.UseCors("AllowNetlifyAndLocal");
+// CORS должен быть здесь
+app.UseCors("AllowAll");
 
-app.UseAuthentication();
 app.UseAuthorization();
-
-// ========== ОСНОВНЫЕ ЭНДПОИНТЫ ==========
-app.MapGet("/", () => "MetaPl API is running. Use /swagger for API documentation.");
-app.MapGet("/health", () => Results.Ok(new { 
-    status = "Healthy", 
-    timestamp = DateTime.UtcNow,
-    environment = app.Environment.EnvironmentName,
-    service = "MetaPl API",
-    frontend = frontendUrl
-}));
-
-// Обработчик ошибок
-app.MapGet("/error", () => Results.Problem("An error occurred"));
-
-// ========== КОНТРОЛЛЕРЫ ==========
 app.MapControllers();
 
-// ========== ЗАПУСК ==========
-Console.WriteLine($"=== Starting MetaPl API on port {railwayPort} ===");
+// Тестовый endpoint
+app.MapGet("/", () => "MetaPl API is running!");
+app.MapGet("/test", () => new { status = "OK", time = DateTime.UtcNow });
+
+Console.WriteLine("=== MetaPl API Starting ===");
 app.Run();
