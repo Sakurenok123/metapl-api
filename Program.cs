@@ -8,11 +8,17 @@ using System.Text.Json.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 
 // ========== КОНФИГУРАЦИЯ ДЛЯ RAILWAY ==========
+// Railway устанавливает PORT в переменных окружения
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-builder.WebHost.ConfigureKestrel(options =>
-{
-    options.ListenAnyIP(int.Parse(port));
-});
+
+// Удалите настройку Kestrel, так как она конфликтует
+// builder.WebHost.ConfigureKestrel(options =>
+// {
+//     options.ListenAnyIP(int.Parse(port));
+// });
+
+// Вместо этого используйте переменную окружения для URL
+builder.WebHost.UseUrls($"http://*:{port}");
 
 // Переопределяем строку подключения из Railway
 var railwayDbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
@@ -56,12 +62,7 @@ builder.Services.AddSwaggerGen(c =>
     { 
         Title = "MetaPl API", 
         Version = "v1",
-        Description = "API для платформы метаплатформ",
-        Contact = new OpenApiContact
-        {
-            Name = "MetaPl Team",
-            Email = "support@metaplatforme.ru"
-        }
+        Description = "API для платформы метаплатформ"
     });
 });
 
@@ -78,15 +79,13 @@ else
     Console.WriteLine($"✗ WARNING: Database connection string is not set!");
 }
 
-// ========== СЕРВИСЫ (без аутентификации) ==========
+// ========== СЕРВИСЫ ==========
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<IApplicationService, ApplicationService>();
 builder.Services.AddScoped<IEventsService, EventsService>();
 builder.Services.AddScoped<IStatusService, StatusService>();
-// Если AuthService не использует JWT, можно оставить
 builder.Services.AddScoped<IAuthService, AuthService>();
-
 builder.Services.AddHttpContextAccessor();
 
 // ========== CORS ==========
