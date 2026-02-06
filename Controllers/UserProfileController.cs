@@ -8,7 +8,6 @@ namespace MetaPlApi.Controllers
 {
     [Route("api/user")]
     [ApiController]
-    [Authorize]
     public class UserProfileController : ControllerBase
     {
         private readonly MetaplatformeContext _context;
