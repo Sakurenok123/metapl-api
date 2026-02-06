@@ -14,10 +14,235 @@ namespace MetaPlApi.Services
             _context = context;
         }
 
+        public async Task<ApiResponse<List<PlaceResponse>>> GetPopularPlacesAsync(int limit = 6)
+        {
+            try
+            {
+                Console.WriteLine($"Getting popular places, limit: {limit}");
+                
+                // Получаем места с самым большим количеством заявок
+                var popularPlaceIds = await _context.Applications
+                    .Where(a => a.PlaceId != null)
+                    .GroupBy(a => a.PlaceId)
+                    .Select(g => new { PlaceId = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count)
+                    .Select(x => x.PlaceId)
+                    .Take(limit)
+                    .ToListAsync();
+
+                Console.WriteLine($"Popular place IDs: {string.Join(", ", popularPlaceIds)}");
+
+                // Если нет популярных по заявкам, берем просто первые места
+                if (!popularPlaceIds.Any())
+                {
+                    popularPlaceIds = await _context.Places
+                        .OrderBy(p => p.Id)
+                        .Select(p => p.Id)
+                        .Take(limit)
+                        .ToListAsync();
+                }
+
+                var places = await _context.Places
+                    .Where(p => popularPlaceIds.Contains(p.Id))
+                    .Include(p => p.Address)
+                    .Include(p => p.EquipmentsPlaces)
+                        .ThenInclude(ep => ep.Equipment)
+                    .Include(p => p.CharacteristicsPlaces)
+                        .ThenInclude(cp => cp.Characteristic)
+                    .Include(p => p.ServicesPlaces)
+                        .ThenInclude(sp => sp.Service)
+                    .Include(p => p.PhotoPlaces)
+                        .ThenInclude(pp => pp.Photo)
+                    .ToListAsync();
+
+                Console.WriteLine($"Found {places.Count} places");
+
+                // Запрашиваем рейтинги
+                var placeIds = places.Select(p => p.Id).ToList();
+                var reviewStats = await _context.PlaceReviews
+                    .Where(r => placeIds.Contains(r.PlaceId))
+                    .GroupBy(r => r.PlaceId)
+                    .Select(g => new 
+                    { 
+                        PlaceId = g.Key, 
+                        Avg = g.Average(r => r.Rating), 
+                        Count = g.Count() 
+                    })
+                    .ToListAsync();
+
+                var statsDict = reviewStats.ToDictionary(s => s.PlaceId);
+
+                var response = places.Select(p =>
+                {
+                    var stats = statsDict.GetValueOrDefault(p.Id);
+                    return new PlaceResponse
+                    {
+                        Id = p.Id,
+                        Name = p.Name,
+                        Address = p.Address != null ? new AddressInfo
+                        {
+                            Id = p.Address.Id,
+                            City = p.Address.City ?? "Не указано",
+                            Street = p.Address.Street ?? "Не указано",
+                            House = p.Address.House ?? "Не указано"
+                        } : new AddressInfo
+                        {
+                            Id = 0,
+                            City = "Не указано",
+                            Street = "Не указано",
+                            House = "Не указано"
+                        },
+                        Equipments = p.EquipmentsPlaces?
+                            .Select(ep => new EquipmentInfo 
+                            { 
+                                Id = ep.Equipment?.Id ?? 0, 
+                                Name = ep.Equipment?.Name ?? "Не указано" 
+                            }).ToList() ?? new List<EquipmentInfo>(),
+                        Characteristics = p.CharacteristicsPlaces?
+                            .Select(cp => new CharacteristicInfo 
+                            { 
+                                Id = cp.Characteristic?.Id ?? 0, 
+                                Name = cp.Characteristic?.Name ?? "Не указано" 
+                            }).ToList() ?? new List<CharacteristicInfo>(),
+                        Services = p.ServicesPlaces?
+                            .Select(sp => new ServiceInfo 
+                            { 
+                                Id = sp.Service?.Id ?? 0, 
+                                Name = sp.Service?.Name ?? "Не указано" 
+                            }).ToList() ?? new List<ServiceInfo>(),
+                        Photos = p.PhotoPlaces?
+                            .Select(pp => new PhotoInfo 
+                            { 
+                                Id = pp.Photo?.Id ?? 0, 
+                                Url = pp.Photo?.Name ?? "" 
+                            }).ToList() ?? new List<PhotoInfo>(),
+                        AverageRating = stats != null ? Math.Round(stats.Avg, 1) : (double?)null,
+                        ReviewCount = stats?.Count ?? 0
+                    };
+                }).ToList();
+
+                Console.WriteLine($"Returning {response.Count} popular places");
+                return ApiResponse<List<PlaceResponse>>.SuccessResponse(response);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ERROR in GetPopularPlacesAsync: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при получении популярных площадок: {ex.Message}");
+            }
+        }
+
+        public async Task<ApiResponse<List<PlaceResponse>>> GetAllPlacesAsync(double? minRating = null)
+        {
+            try
+            {
+                Console.WriteLine("Getting all places");
+                
+                var places = await _context.Places
+                    .Include(p => p.Address)
+                    .Include(p => p.EquipmentsPlaces)
+                        .ThenInclude(ep => ep.Equipment)
+                    .Include(p => p.CharacteristicsPlaces)
+                        .ThenInclude(cp => cp.Characteristic)
+                    .Include(p => p.ServicesPlaces)
+                        .ThenInclude(sp => sp.Service)
+                    .Include(p => p.PhotoPlaces)
+                        .ThenInclude(pp => pp.Photo)
+                    .OrderBy(p => p.Id)
+                    .ToListAsync();
+
+                Console.WriteLine($"Found {places.Count} places total");
+
+                var placeIds = places.Select(p => p.Id).ToList();
+                var reviewStats = await _context.PlaceReviews
+                    .Where(r => placeIds.Contains(r.PlaceId))
+                    .GroupBy(r => r.PlaceId)
+                    .Select(g => new 
+                    { 
+                        PlaceId = g.Key, 
+                        Avg = g.Average(r => r.Rating), 
+                        Count = g.Count() 
+                    })
+                    .ToListAsync();
+
+                var statsDict = reviewStats.ToDictionary(s => s.PlaceId);
+
+                var response = places.Select(p =>
+                {
+                    var stats = statsDict.GetValueOrDefault(p.Id);
+                    var avg = stats != null ? Math.Round(stats.Avg, 1) : (double?)null;
+                    var count = stats?.Count ?? 0;
+                    
+                    // Фильтр по рейтингу
+                    if (minRating.HasValue && minRating.Value >= 1 && minRating.Value <= 5)
+                    {
+                        if (!avg.HasValue || avg.Value < minRating.Value)
+                            return null;
+                    }
+
+                    return new PlaceResponse
+                    {
+                        Id = p.Id,
+                        Name = p.Name,
+                        Address = p.Address != null ? new AddressInfo
+                        {
+                            Id = p.Address.Id,
+                            City = p.Address.City ?? "Не указано",
+                            Street = p.Address.Street ?? "Не указано",
+                            House = p.Address.House ?? "Не указано"
+                        } : new AddressInfo
+                        {
+                            Id = 0,
+                            City = "Не указано",
+                            Street = "Не указано",
+                            House = "Не указано"
+                        },
+                        Equipments = p.EquipmentsPlaces?
+                            .Select(ep => new EquipmentInfo 
+                            { 
+                                Id = ep.Equipment?.Id ?? 0, 
+                                Name = ep.Equipment?.Name ?? "Не указано" 
+                            }).ToList() ?? new List<EquipmentInfo>(),
+                        Characteristics = p.CharacteristicsPlaces?
+                            .Select(cp => new CharacteristicInfo 
+                            { 
+                                Id = cp.Characteristic?.Id ?? 0, 
+                                Name = cp.Characteristic?.Name ?? "Не указано" 
+                            }).ToList() ?? new List<CharacteristicInfo>(),
+                        Services = p.ServicesPlaces?
+                            .Select(sp => new ServiceInfo 
+                            { 
+                                Id = sp.Service?.Id ?? 0, 
+                                Name = sp.Service?.Name ?? "Не указано" 
+                            }).ToList() ?? new List<ServiceInfo>(),
+                        Photos = p.PhotoPlaces?
+                            .Select(pp => new PhotoInfo 
+                            { 
+                                Id = pp.Photo?.Id ?? 0, 
+                                Url = pp.Photo?.Name ?? "" 
+                            }).ToList() ?? new List<PhotoInfo>(),
+                        AverageRating = avg,
+                        ReviewCount = count
+                    };
+                }).Where(p => p != null).ToList();
+
+                Console.WriteLine($"Returning {response.Count} places after filtering");
+                return ApiResponse<List<PlaceResponse>>.SuccessResponse(response);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ERROR in GetAllPlacesAsync: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при получении мест: {ex.Message}");
+            }
+        }
+
         public async Task<ApiResponse<PlaceResponse>> GetPlaceByIdAsync(int id)
         {
             try
             {
+                Console.WriteLine($"Getting place by ID: {id}");
+                
                 var place = await _context.Places
                     .Include(p => p.Address)
                     .Include(p => p.EquipmentsPlaces).ThenInclude(ep => ep.Equipment)
@@ -27,158 +252,161 @@ namespace MetaPlApi.Services
                     .FirstOrDefaultAsync(p => p.Id == id);
 
                 if (place == null)
+                {
+                    Console.WriteLine($"Place with ID {id} not found");
                     return ApiResponse<PlaceResponse>.ErrorResponse("Площадка не найдена");
+                }
+
+                Console.WriteLine($"Found place: {place.Name}");
+
+                // Получаем статистику отзывов
+                var reviewStats = await _context.PlaceReviews
+                    .Where(r => r.PlaceId == id)
+                    .GroupBy(r => r.PlaceId)
+                    .Select(g => new { Avg = g.Average(r => r.Rating), Count = g.Count() })
+                    .FirstOrDefaultAsync();
 
                 var response = new PlaceResponse
                 {
                     Id = place.Id,
                     Name = place.Name,
-                    Address = new AddressInfo
+                    Address = place.Address != null ? new AddressInfo
                     {
                         Id = place.Address.Id,
-                        City = place.Address.City,
-                        Street = place.Address.Street,
-                        House = place.Address.House
+                        City = place.Address.City ?? "Не указано",
+                        Street = place.Address.Street ?? "Не указано",
+                        House = place.Address.House ?? "Не указано"
+                    } : new AddressInfo
+                    {
+                        Id = 0,
+                        City = "Не указано",
+                        Street = "Не указано",
+                        House = "Не указано"
                     },
-                    Equipments = place.EquipmentsPlaces.Select(ep => new EquipmentInfo
-                    {
-                        Id = ep.Equipment.Id,
-                        Name = ep.Equipment.Name
-                    }).ToList(),
-                    Characteristics = place.CharacteristicsPlaces.Select(cp => new CharacteristicInfo
-                    {
-                        Id = cp.Characteristic.Id,
-                        Name = cp.Characteristic.Name
-                    }).ToList(),
-                    Services = place.ServicesPlaces.Select(sp => new ServiceInfo
-                    {
-                        Id = sp.Service.Id,
-                        Name = sp.Service.Name
-                    }).ToList(),
-                    Photos = place.PhotoPlaces.Select(pp => new PhotoInfo
-                    {
-                        Id = pp.Photo.Id,
-                        Url = pp.Photo.Name
-                    }).ToList()
+                    Equipments = place.EquipmentsPlaces?
+                        .Select(ep => new EquipmentInfo
+                        {
+                            Id = ep.Equipment?.Id ?? 0,
+                            Name = ep.Equipment?.Name ?? "Не указано"
+                        }).ToList() ?? new List<EquipmentInfo>(),
+                    Characteristics = place.CharacteristicsPlaces?
+                        .Select(cp => new CharacteristicInfo
+                        {
+                            Id = cp.Characteristic?.Id ?? 0,
+                            Name = cp.Characteristic?.Name ?? "Не указано"
+                        }).ToList() ?? new List<CharacteristicInfo>(),
+                    Services = place.ServicesPlaces?
+                        .Select(sp => new ServiceInfo
+                        {
+                            Id = sp.Service?.Id ?? 0,
+                            Name = sp.Service?.Name ?? "Не указано"
+                        }).ToList() ?? new List<ServiceInfo>(),
+                    Photos = place.PhotoPlaces?
+                        .Select(pp => new PhotoInfo
+                        {
+                            Id = pp.Photo?.Id ?? 0,
+                            Url = pp.Photo?.Name ?? ""
+                        }).ToList() ?? new List<PhotoInfo>(),
                 };
-                var reviewStats = await _context.PlaceReviews.Where(r => r.PlaceId == id).GroupBy(r => r.PlaceId)
-                    .Select(g => new { Avg = g.Average(r => r.Rating), Count = g.Count() }).FirstOrDefaultAsync();
-                if (reviewStats != null) { response.AverageRating = Math.Round(reviewStats.Avg, 1); response.ReviewCount = reviewStats.Count; }
 
+                if (reviewStats != null) 
+                { 
+                    response.AverageRating = Math.Round(reviewStats.Avg, 1); 
+                    response.ReviewCount = reviewStats.Count; 
+                }
+
+                Console.WriteLine($"Successfully returned place with ID {id}");
                 return ApiResponse<PlaceResponse>.SuccessResponse(response);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"ERROR in GetPlaceByIdAsync: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return ApiResponse<PlaceResponse>.ErrorResponse($"Ошибка при получении площадки: {ex.Message}");
             }
         }
 
-        public async Task<ApiResponse<List<PlaceResponse>>> GetAllPlacesAsync(double? minRating = null)
+        public async Task<ApiResponse<List<PlaceResponse>>> SearchPlacesAsync(string term)
         {
             try
             {
+                Console.WriteLine($"Searching places with term: {term}");
+                
+                if (string.IsNullOrWhiteSpace(term))
+                {
+                    return ApiResponse<List<PlaceResponse>>.ErrorResponse("Поисковый запрос не может быть пустым");
+                }
+
                 var places = await _context.Places
                     .Include(p => p.Address)
                     .Include(p => p.EquipmentsPlaces).ThenInclude(ep => ep.Equipment)
                     .Include(p => p.CharacteristicsPlaces).ThenInclude(cp => cp.Characteristic)
                     .Include(p => p.ServicesPlaces).ThenInclude(sp => sp.Service)
                     .Include(p => p.PhotoPlaces).ThenInclude(pp => pp.Photo)
-                    .OrderBy(p => p.Id)
+                    .Where(p => p.Name.Contains(term) ||
+                                (p.Address != null && (
+                                    p.Address.City.Contains(term) ||
+                                    p.Address.Street.Contains(term))) ||
+                                p.EquipmentsPlaces.Any(ep => ep.Equipment != null && ep.Equipment.Name.Contains(term)) ||
+                                p.CharacteristicsPlaces.Any(cp => cp.Characteristic != null && cp.Characteristic.Name.Contains(term)) ||
+                                p.ServicesPlaces.Any(sp => sp.Service != null && sp.Service.Name.Contains(term)))
+                    .OrderBy(p => p.Address != null ? p.Address.City : "")
+                    .ThenBy(p => p.Address != null ? p.Address.Street : "")
+                    .Take(50)
                     .ToListAsync();
 
-                var placeIds = places.Select(p => p.Id).ToList();
-                var reviewStats = await _context.PlaceReviews.Where(r => placeIds.Contains(r.PlaceId))
-                    .GroupBy(r => r.PlaceId)
-                    .Select(g => new { PlaceId = g.Key, Avg = g.Average(r => r.Rating), Count = g.Count() })
-                    .ToListAsync();
-                var statsDict = reviewStats.ToDictionary(s => s.PlaceId);
+                Console.WriteLine($"Found {places.Count} places matching search");
 
-                var response = places.Select(p =>
+                var response = places.Select(p => new PlaceResponse
                 {
-                    var stats = statsDict.GetValueOrDefault(p.Id);
-                    var avg = stats != null ? Math.Round(stats.Avg, 1) : (double?)null;
-                    var count = stats?.Count ?? 0;
-                    return new PlaceResponse
+                    Id = p.Id,
+                    Name = p.Name,
+                    Address = p.Address != null ? new AddressInfo
                     {
-                        Id = p.Id,
-                        Name = p.Name,
-                        Address = new AddressInfo
+                        Id = p.Address.Id,
+                        City = p.Address.City ?? "Не указано",
+                        Street = p.Address.Street ?? "Не указано",
+                        House = p.Address.House ?? "Не указано"
+                    } : new AddressInfo
+                    {
+                        Id = 0,
+                        City = "Не указано",
+                        Street = "Не указано",
+                        House = "Не указано"
+                    },
+                    Equipments = p.EquipmentsPlaces?
+                        .Select(ep => new EquipmentInfo
                         {
-                            Id = p.Address.Id,
-                            City = p.Address.City,
-                            Street = p.Address.Street,
-                            House = p.Address.House
-                        },
-                        Equipments = p.EquipmentsPlaces.Select(ep => new EquipmentInfo { Id = ep.Equipment.Id, Name = ep.Equipment.Name }).ToList(),
-                        Characteristics = p.CharacteristicsPlaces.Select(cp => new CharacteristicInfo { Id = cp.Characteristic.Id, Name = cp.Characteristic.Name }).ToList(),
-                        Services = p.ServicesPlaces.Select(sp => new ServiceInfo { Id = sp.Service.Id, Name = sp.Service.Name }).ToList(),
-                        Photos = p.PhotoPlaces.Select(pp => new PhotoInfo { Id = pp.Photo.Id, Url = pp.Photo.Name }).ToList(),
-                        AverageRating = avg,
-                        ReviewCount = count
-                    };
+                            Id = ep.Equipment?.Id ?? 0,
+                            Name = ep.Equipment?.Name ?? "Не указано"
+                        }).ToList() ?? new List<EquipmentInfo>(),
+                    Characteristics = p.CharacteristicsPlaces?
+                        .Select(cp => new CharacteristicInfo
+                        {
+                            Id = cp.Characteristic?.Id ?? 0,
+                            Name = cp.Characteristic?.Name ?? "Не указано"
+                        }).ToList() ?? new List<CharacteristicInfo>(),
+                    Services = p.ServicesPlaces?
+                        .Select(sp => new ServiceInfo
+                        {
+                            Id = sp.Service?.Id ?? 0,
+                            Name = sp.Service?.Name ?? "Не указано"
+                        }).ToList() ?? new List<ServiceInfo>(),
+                    Photos = p.PhotoPlaces?
+                        .Select(pp => new PhotoInfo
+                        {
+                            Id = pp.Photo?.Id ?? 0,
+                            Url = pp.Photo?.Name ?? ""
+                        }).ToList() ?? new List<PhotoInfo>()
                 }).ToList();
-
-                if (minRating.HasValue && minRating.Value >= 1 && minRating.Value <= 5)
-                    response = response.Where(p => p.AverageRating.HasValue && p.AverageRating.Value >= minRating.Value).ToList();
 
                 return ApiResponse<List<PlaceResponse>>.SuccessResponse(response);
             }
             catch (Exception ex)
             {
-                return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при получении мест: {ex.Message}");
-            }
-        }
-
-        public async Task<ApiResponse<List<PlaceResponse>>> GetPopularPlacesAsync(int limit = 6)
-        {
-            try
-            {
-                var appCounts = await _context.Applications.GroupBy(a => a.PlaceId)
-                    .Select(g => new { PlaceId = g.Key, Count = g.Count() }).ToListAsync();
-                var favCounts = await _context.UserFavorites.GroupBy(uf => uf.PlaceId)
-                    .Select(g => new { PlaceId = g.Key, Count = g.Count() }).ToListAsync();
-                var scores = new Dictionary<int, int>();
-                foreach (var x in appCounts) scores[x.PlaceId] = scores.GetValueOrDefault(x.PlaceId, 0) + x.Count;
-                foreach (var x in favCounts) scores[x.PlaceId] = scores.GetValueOrDefault(x.PlaceId, 0) + x.Count;
-                var topIds = scores.OrderByDescending(kv => kv.Value).Take(limit).Select(kv => kv.Key).ToList();
-                if (topIds.Count == 0)
-                    topIds = await _context.Places.OrderBy(p => p.Id).Take(limit).Select(p => p.Id).ToListAsync();
-                var places = await _context.Places
-                    .Include(p => p.Address)
-                    .Include(p => p.EquipmentsPlaces).ThenInclude(ep => ep.Equipment)
-                    .Include(p => p.CharacteristicsPlaces).ThenInclude(cp => cp.Characteristic)
-                    .Include(p => p.ServicesPlaces).ThenInclude(sp => sp.Service)
-                    .Include(p => p.PhotoPlaces).ThenInclude(pp => pp.Photo)
-                    .Where(p => topIds.Contains(p.Id))
-                    .ToListAsync();
-                places = places.OrderBy(p => topIds.IndexOf(p.Id)).ToList();
-                var popPlaceIds = places.Select(p => p.Id).ToList();
-                var popStats = await _context.PlaceReviews.Where(r => popPlaceIds.Contains(r.PlaceId))
-                    .GroupBy(r => r.PlaceId)
-                    .Select(g => new { PlaceId = g.Key, Avg = g.Average(r => r.Rating), Count = g.Count() })
-                    .ToListAsync();
-                var popStatsDict = popStats.ToDictionary(s => s.PlaceId);
-                var response = places.Select(p =>
-                {
-                    var st = popStatsDict.GetValueOrDefault(p.Id);
-                    return new PlaceResponse
-                    {
-                        Id = p.Id,
-                        Name = p.Name,
-                        Address = new AddressInfo { Id = p.Address.Id, City = p.Address.City, Street = p.Address.Street, House = p.Address.House },
-                        Equipments = p.EquipmentsPlaces.Select(ep => new EquipmentInfo { Id = ep.Equipment.Id, Name = ep.Equipment.Name }).ToList(),
-                        Characteristics = p.CharacteristicsPlaces.Select(cp => new CharacteristicInfo { Id = cp.Characteristic.Id, Name = cp.Characteristic.Name }).ToList(),
-                        Services = p.ServicesPlaces.Select(sp => new ServiceInfo { Id = sp.Service.Id, Name = sp.Service.Name }).ToList(),
-                        Photos = p.PhotoPlaces.Select(pp => new PhotoInfo { Id = pp.Photo.Id, Url = pp.Photo.Name }).ToList(),
-                        AverageRating = st != null ? Math.Round(st.Avg, 1) : null,
-                        ReviewCount = st?.Count ?? 0
-                    };
-                }).ToList();
-                return ApiResponse<List<PlaceResponse>>.SuccessResponse(response);
-            }
-            catch (Exception ex)
-            {
-                return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при получении популярных площадок: {ex.Message}");
+                Console.WriteLine($"ERROR in SearchPlacesAsync: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при поиске мест: {ex.Message}");
             }
         }
 
@@ -186,6 +414,8 @@ namespace MetaPlApi.Services
         {
             try
             {
+                Console.WriteLine($"Creating place: {request.Name}");
+                
                 // Проверка существования адреса
                 var address = await _context.Addresses.FindAsync(request.AddressesId);
                 if (address == null) 
@@ -199,6 +429,8 @@ namespace MetaPlApi.Services
                 };
                 await _context.Places.AddAsync(place);
                 await _context.SaveChangesAsync();
+
+                Console.WriteLine($"Place created with ID: {place.Id}");
 
                 // Добавление оборудования (несколько)
                 if (request.EquipmentsIds != null)
@@ -255,10 +487,13 @@ namespace MetaPlApi.Services
 
                 // Получаем созданную площадку с полными данными
                 var createdPlace = await GetPlaceByIdAsync(place.Id);
+                Console.WriteLine($"Place creation completed successfully");
                 return createdPlace;
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"ERROR in CreatePlaceAsync: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return ApiResponse<PlaceResponse>.ErrorResponse($"Ошибка при создании площадки: {ex.Message}");
             }
         }
@@ -267,9 +502,12 @@ namespace MetaPlApi.Services
         {
             try
             {
+                Console.WriteLine($"Updating place ID: {id}");
+                
                 var place = await _context.Places.FindAsync(id);
                 if (place == null)
                 {
+                    Console.WriteLine($"Place with ID {id} not found");
                     return ApiResponse<PlaceResponse>.ErrorResponse("Место не найдено");
                 }
 
@@ -421,10 +659,13 @@ namespace MetaPlApi.Services
 
                 // Получаем обновленное место со всеми данными
                 var updatedPlace = await GetPlaceByIdAsync(id);
+                Console.WriteLine($"Place update completed successfully");
                 return updatedPlace;
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"ERROR in UpdatePlaceAsync: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return ApiResponse<PlaceResponse>.ErrorResponse($"Ошибка при обновлении места: {ex.Message}");
             }
         }
@@ -433,18 +674,22 @@ namespace MetaPlApi.Services
         {
             try
             {
+                Console.WriteLine($"Deleting place ID: {id}");
+                
                 var place = await _context.Places
                     .Include(p => p.Applications)
                     .FirstOrDefaultAsync(p => p.Id == id);
 
                 if (place == null)
                 {
+                    Console.WriteLine($"Place with ID {id} not found");
                     return ApiResponse<bool>.ErrorResponse("Место не найдено");
                 }
 
                 // Проверяем, есть ли связанные заявки
                 if (place.Applications.Any())
                 {
+                    Console.WriteLine($"Cannot delete place {id} - has {place.Applications.Count} applications");
                     return ApiResponse<bool>.ErrorResponse("Невозможно удалить место, так как к нему привязаны заявки");
                 }
 
@@ -462,82 +707,14 @@ namespace MetaPlApi.Services
                 _context.Places.Remove(place);
                 await _context.SaveChangesAsync();
 
+                Console.WriteLine($"Place {id} deleted successfully");
                 return ApiResponse<bool>.SuccessResponse(true, "Место успешно удалено");
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"ERROR in DeletePlaceAsync: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return ApiResponse<bool>.ErrorResponse($"Ошибка при удалении места: {ex.Message}");
-            }
-        }
-
-        public async Task<ApiResponse<List<PlaceResponse>>> SearchPlacesAsync(string searchTerm)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(searchTerm))
-                {
-                    return ApiResponse<List<PlaceResponse>>.ErrorResponse("Поисковый запрос не может быть пустым");
-                }
-
-                var places = await _context.Places
-                    .Include(p => p.Address)
-                    .Include(p => p.EquipmentsPlaces).ThenInclude(ep => ep.Equipment)
-                    .Include(p => p.CharacteristicsPlaces).ThenInclude(cp => cp.Characteristic)
-                    .Include(p => p.ServicesPlaces).ThenInclude(sp => sp.Service)
-                    .Include(p => p.PhotoPlaces).ThenInclude(pp => pp.Photo)
-                    .Where(p => p.Name.Contains(searchTerm) ||
-                                p.Address.City.Contains(searchTerm) ||
-                                p.Address.Street.Contains(searchTerm) ||
-                                p.EquipmentsPlaces.Any(ep => ep.Equipment.Name.Contains(searchTerm)) ||
-                                p.CharacteristicsPlaces.Any(cp => cp.Characteristic.Name.Contains(searchTerm)) ||
-                                p.ServicesPlaces.Any(sp => sp.Service.Name.Contains(searchTerm)))
-                    .OrderBy(p => p.Address.City)
-                    .ThenBy(p => p.Address.Street)
-                    .Take(50)
-                    .ToListAsync();
-
-                var response = places.Select(p => new PlaceResponse
-                {
-                    Id = p.Id,
-                    Name = p.Name,
-                    Address = new AddressInfo
-                    {
-                        Id = p.Address.Id,
-                        City = p.Address.City,
-                        Street = p.Address.Street,
-                        House = p.Address.House
-                    },
-                    Equipments = p.EquipmentsPlaces
-                        .Select(ep => new EquipmentInfo
-                        {
-                            Id = ep.Equipment.Id,
-                            Name = ep.Equipment.Name
-                        }).ToList(),
-                    Characteristics = p.CharacteristicsPlaces
-                        .Select(cp => new CharacteristicInfo
-                        {
-                            Id = cp.Characteristic.Id,
-                            Name = cp.Characteristic.Name
-                        }).ToList(),
-                    Services = p.ServicesPlaces
-                        .Select(sp => new ServiceInfo
-                        {
-                            Id = sp.Service.Id,
-                            Name = sp.Service.Name
-                        }).ToList(),
-                    Photos = p.PhotoPlaces
-                        .Select(pp => new PhotoInfo
-                        {
-                            Id = pp.Photo.Id,
-                            Url = pp.Photo.Name
-                        }).ToList()
-                }).ToList();
-
-                return ApiResponse<List<PlaceResponse>>.SuccessResponse(response);
-            }
-            catch (Exception ex)
-            {
-                return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при поиске мест: {ex.Message}");
             }
         }
     }
