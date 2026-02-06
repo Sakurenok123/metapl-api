@@ -1,25 +1,26 @@
-# Используем образ с .NET 9.0
+# Build stage
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Копируем и восстанавливаем зависимости
+# Copy csproj and restore
 COPY ["MetaPlApi.csproj", "."]
 RUN dotnet restore "MetaPlApi.csproj"
 
-# Копируем остальной код и собираем
+# Copy everything else and build
 COPY . .
 RUN dotnet build "MetaPlApi.csproj" -c Release -o /app/build
 
-# Публикуем приложение
-RUN dotnet publish "MetaPlApi.csproj" -c Release -o /app/publish
+# Publish
+RUN dotnet publish "MetaPlApi.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-# Финальный образ
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# Railway автоматически устанавливает PORT
-ENV ASPNETCORE_URLS=http://+:${PORT:-8080}
+# Устанавливаем переменные окружения
+ENV ASPNETCORE_URLS=http://*:8080
 EXPOSE 8080
 
+# Прямой запуск без cd
 ENTRYPOINT ["dotnet", "MetaPlApi.dll"]
