@@ -20,77 +20,121 @@ namespace MetaPlApi.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
+                Console.WriteLine($"Login attempt for user: {request?.Login}");
                 
-                return BadRequest(ApiResponse<AuthResponse>.ErrorResponse("Ошибка валидации", errors));
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList();
+                    
+                    Console.WriteLine($"Model validation errors: {string.Join(", ", errors)}");
+                    return BadRequest(ApiResponse<AuthResponse>.ErrorResponse("Ошибка валидации", errors));
+                }
+                
+                var response = await _authService.LoginAsync(request);
+                
+                Console.WriteLine($"Login response success: {response.Success}, message: {response.Message}");
+                
+                if (!response.Success)
+                {
+                    return Unauthorized(response);
+                }
+                
+                return Ok(response);
             }
-            
-            var response = await _authService.LoginAsync(request);
-            
-            if (!response.Success)
+            catch (Exception ex)
             {
-                return Unauthorized(response);
+                Console.WriteLine($"ERROR in Login: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                return StatusCode(500, ApiResponse<AuthResponse>.ErrorResponse($"Внутренняя ошибка сервера: {ex.Message}"));
             }
-            
-            return Ok(response);
         }
         
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
+                Console.WriteLine($"Register attempt for user: {request?.Login}");
                 
-                return BadRequest(ApiResponse<AuthResponse>.ErrorResponse("Ошибка валидации", errors));
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList();
+                    
+                    Console.WriteLine($"Model validation errors: {string.Join(", ", errors)}");
+                    return BadRequest(ApiResponse<AuthResponse>.ErrorResponse("Ошибка валидации", errors));
+                }
+                
+                var response = await _authService.RegisterAsync(request);
+                
+                Console.WriteLine($"Register response success: {response.Success}, message: {response.Message}");
+                
+                if (!response.Success)
+                {
+                    return BadRequest(response);
+                }
+                
+                return Ok(response);
             }
-            
-            var response = await _authService.RegisterAsync(request);
-            
-            if (!response.Success)
+            catch (Exception ex)
             {
-                return BadRequest(response);
+                Console.WriteLine($"ERROR in Register: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                return StatusCode(500, ApiResponse<AuthResponse>.ErrorResponse($"Внутренняя ошибка сервера: {ex.Message}"));
             }
-            
-            return Ok(response);
         }
         
         [HttpPost("change-password")]
         [Authorize]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
+                Console.WriteLine("Change password attempt");
                 
-                return BadRequest(ApiResponse<bool>.ErrorResponse("Ошибка валидации", errors));
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList();
+                    
+                    Console.WriteLine($"Model validation errors: {string.Join(", ", errors)}");
+                    return BadRequest(ApiResponse<bool>.ErrorResponse("Ошибка валидации", errors));
+                }
+                
+                var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+                {
+                    Console.WriteLine("User not authorized for password change");
+                    return Unauthorized(ApiResponse<bool>.ErrorResponse("Пользователь не авторизован"));
+                }
+                
+                Console.WriteLine($"Changing password for user ID: {userId}");
+                var response = await _authService.ChangePasswordAsync(userId, request);
+                
+                Console.WriteLine($"Change password response success: {response.Success}");
+                
+                if (!response.Success)
+                {
+                    return BadRequest(response);
+                }
+                
+                return Ok(response);
             }
-            
-            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
-            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            catch (Exception ex)
             {
-                return Unauthorized(ApiResponse<bool>.ErrorResponse("Пользователь не авторизован"));
+                Console.WriteLine($"ERROR in ChangePassword: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                return StatusCode(500, ApiResponse<bool>.ErrorResponse($"Внутренняя ошибка сервера: {ex.Message}"));
             }
-            
-            var response = await _authService.ChangePasswordAsync(userId, request);
-            
-            if (!response.Success)
-            {
-                return BadRequest(response);
-            }
-            
-            return Ok(response);
         }
     }
 }
