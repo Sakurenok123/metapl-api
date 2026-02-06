@@ -6,12 +6,19 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Конфигурация для Railway
+// ВАЖНО ДЛЯ RAILWAY: Устанавливаем порт до создания app
 var railwayPort = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 Console.WriteLine($"🚀 Railway port: {railwayPort}");
 
+// Устанавливаем URL для Kestrel
+builder.WebHost.UseUrls($"http://*:{railwayPort}");
+Console.WriteLine($"🔗 Kestrel will listen on: http://*:{railwayPort}");
+
 // Проверяем переменные окружения
 Console.WriteLine("=== Environment Variables ===");
+Console.WriteLine($"PORT: {railwayPort}");
+Console.WriteLine($"ASPNETCORE_ENVIRONMENT: {Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")}");
+
 var railwayDbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 Console.WriteLine($"DATABASE_URL exists: {!string.IsNullOrEmpty(railwayDbUrl)}");
 
@@ -40,13 +47,14 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
     catch (Exception ex)
     {
         Console.WriteLine($"❌ Error parsing DATABASE_URL: {ex.Message}");
-        connectionString = "Host=localhost;Database=test;Username=postgres;Password=1234";
+        // Для Railway лучше не использовать localhost
+        connectionString = "";
     }
 }
 else
 {
-    Console.WriteLine($"⚠️  DATABASE_URL not found, using default connection");
-    connectionString = "Host=localhost;Database=test;Username=postgres;Password=1234";
+    Console.WriteLine($"⚠️  DATABASE_URL not found, running without database");
+    connectionString = "";
 }
 
 // Основные сервисы
@@ -63,17 +71,35 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo 
     { 
         Title = "MetaPl API", 
-        Version = "v1" 
+        Version = "v1",
+        Description = "API для платформы метаплатформ",
+        Contact = new OpenApiContact
+        {
+            Name = "MetaPl Team",
+            Email = "support@metapl.ru"
+        }
     });
 });
 
-// База данных
-Console.WriteLine($"🔌 Registering database with connection string");
-builder.Services.AddDbContext<MetaplatformeContext>(options =>
+// База данных - только если есть строка подключения
+if (!string.IsNullOrEmpty(connectionString))
 {
-    options.UseNpgsql(connectionString);
-    options.LogTo(Console.WriteLine, Microsoft.Extensions.Logging.LogLevel.Information);
-});
+    Console.WriteLine($"🔌 Registering database with connection string");
+    builder.Services.AddDbContext<MetaplatformeContext>(options =>
+    {
+        options.UseNpgsql(connectionString);
+        options.LogTo(Console.WriteLine, Microsoft.Extensions.Logging.LogLevel.Information);
+    });
+}
+else
+{
+    Console.WriteLine($"⚠️  No database connection, using in-memory for testing");
+    // Используем in-memory для тестов
+    builder.Services.AddDbContext<MetaplatformeContext>(options =>
+    {
+        options.UseInMemoryDatabase("MetaPlTestDB");
+    });
+}
 
 // Сервисы
 builder.Services.AddScoped<IPlaceService, PlaceService>();
@@ -98,11 +124,11 @@ builder.Services.AddCors(options =>
 // Создание приложения
 var app = builder.Build();
 
+// ВАЖНО: Указываем, что мы в Production для Railway
+app.Environment.EnvironmentName = "Production";
+
 // Middleware
-if (app.Environment.IsDevelopment())
-{
-    app.UseDeveloperExceptionPage();
-}
+app.UseDeveloperExceptionPage(); // Всегда включаем для отладки в Railway
 
 // ВАЖНО: CORS должен быть ПЕРЕД UseAuthorization и MapControllers
 app.UseCors("AllowAll");
@@ -112,23 +138,39 @@ app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "MetaPl API v1");
     c.RoutePrefix = "swagger";
+    c.DisplayRequestDuration();
 });
 
 // Отключаем HTTPS редирект для Railway
 // app.UseHttpsRedirection();
 
 app.UseAuthorization();
+
+// ВАЖНО: MapControllers должен быть ДО MapGet для /
 app.MapControllers();
 
 // Тестовые endpoint'ы
-app.MapGet("/", () => "✅ MetaPl API is running!");
+app.MapGet("/", () => 
+{
+    var baseUrl = $"{app.Environment.EnvironmentName} - Port: {railwayPort}";
+    return $"✅ MetaPl API is running! {baseUrl}";
+});
+
 app.MapGet("/test", () => new 
 { 
     status = "OK", 
     time = DateTime.UtcNow,
     environment = app.Environment.EnvironmentName,
     port = railwayPort,
-    database = !string.IsNullOrEmpty(connectionString) ? "Configured" : "Not configured"
+    database = !string.IsNullOrEmpty(connectionString) ? "Configured" : "Test mode (in-memory)",
+    api = "MetaPl API",
+    version = "1.0",
+    urls = new[] { 
+        "/swagger", 
+        "/health", 
+        "/api/places", 
+        "/api/applications" 
+    }
 });
 
 app.MapGet("/health", () => Results.Ok(new 
@@ -140,5 +182,50 @@ app.MapGet("/health", () => Results.Ok(new
     version = "1.0"
 }));
 
+// Endpoint для проверки переменных окружения (только ключевые)
+app.MapGet("/env", () =>
+{
+    var envVars = Environment.GetEnvironmentVariables();
+    var filtered = new Dictionary<string, string?>();
+    
+    foreach (System.Collections.DictionaryEntry entry in envVars)
+    {
+        var key = entry.Key.ToString();
+        if (key?.Contains("PORT", StringComparison.OrdinalIgnoreCase) == true ||
+            key?.Contains("RAILWAY", StringComparison.OrdinalIgnoreCase) == true ||
+            key?.Contains("DATABASE", StringComparison.OrdinalIgnoreCase) == true ||
+            key?.Contains("URL", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            filtered[key] = entry.Value?.ToString();
+        }
+    }
+    
+    return Results.Ok(filtered);
+});
+
+// Endpoint для проверки базовых контроллеров
+app.MapGet("/api-check", () =>
+{
+    var controllers = new[]
+    {
+        "/api/places",
+        "/api/applications",
+        "/api/auth",
+        "/api/users"
+    };
+    
+    return Results.Ok(new
+    {
+        message = "API endpoints available",
+        endpoints = controllers,
+        timestamp = DateTime.UtcNow
+    });
+});
+
 Console.WriteLine($"=== MetaPl API Starting on port {railwayPort} ===");
+Console.WriteLine($"=== Environment: {app.Environment.EnvironmentName} ===");
+Console.WriteLine($"=== Swagger UI: http://localhost:{railwayPort}/swagger ===");
+Console.WriteLine($"=== Health check: http://localhost:{railwayPort}/health ===");
+Console.WriteLine($"=== Root endpoint: http://localhost:{railwayPort}/ ===");
+
 app.Run();
