@@ -5,6 +5,7 @@ using Microsoft.OpenApi.Models;
 using MetaPlApi.Data.Entities;
 using MetaPlApi.Services;
 using System.Text;
+using MetaPlApi.Controllers;
 
 var builder = WebApplication.CreateBuilder(args);
 
