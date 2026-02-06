@@ -1,11 +1,8 @@
 using MetaPlApi.Controllers;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MetaPlApi.Data.Entities;
 using MetaPlApi.Services;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -78,44 +75,7 @@ else
     Console.WriteLine("WARNING: Database connection string is not set!");
 }
 
-// ========== JWT АУТЕНТИФИКАЦИЯ ==========
-var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET") ?? 
-                builder.Configuration["Jwt:Secret"];
-var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? 
-                builder.Configuration["Jwt:Issuer"] ?? "https://metaplatforme.ru/";
-var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? 
-                  builder.Configuration["Jwt:Audience"] ?? "https://metaplatforme.ru/";
-
-if (!string.IsNullOrEmpty(jwtSecret))
-{
-    builder.Services.AddAuthentication(options =>
-    {
-        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = !string.IsNullOrEmpty(jwtIssuer),
-            ValidateAudience = !string.IsNullOrEmpty(jwtAudience),
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer,
-            ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
-        };
-    });
-    Console.WriteLine("JWT authentication configured");
-}
-else
-{
-    Console.WriteLine("WARNING: JWT Secret is not set!");
-}
-
-builder.Services.AddAuthorization();
-
-// ========== СЕРВИСЫ ==========
+// ========== СЕРВИСЫ (без JWT) ==========
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
@@ -142,7 +102,6 @@ var app = builder.Build();
 Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
 Console.WriteLine($"Port: {port}");
 Console.WriteLine($"Database URL: {(string.IsNullOrEmpty(railwayDbUrl) ? "NOT SET" : "SET")}");
-Console.WriteLine($"JWT Secret: {(string.IsNullOrEmpty(jwtSecret) ? "NOT SET" : "SET")}");
 
 // Обработка ошибок
 if (app.Environment.IsDevelopment())
@@ -163,8 +122,6 @@ else
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseCors("AllowAll");
-app.UseAuthentication();
-app.UseAuthorization();
 
 // ========== ЭНДПОИНТЫ ==========
 app.MapGet("/", () => "MetaPl API is running");
