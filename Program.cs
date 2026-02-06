@@ -3,22 +3,21 @@ using Microsoft.OpenApi.Models;
 using MetaPlApi.Data.Entities;
 using MetaPlApi.Services;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ========== КОНФИГУРАЦИЯ ДЛЯ RAILWAY ==========
-// Railway устанавливает PORT в переменных окружения
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+// Получаем URL фронтенда из окружения или используем Netlify по умолчанию
+var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "https://clever-basbousa-2c3b30.netlify.app";
+var railwayPort = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 
-// Удалите настройку Kestrel, так как она конфликтует
-// builder.WebHost.ConfigureKestrel(options =>
-// {
-//     options.ListenAnyIP(int.Parse(port));
-// });
-
-// Вместо этого используйте переменную окружения для URL
-builder.WebHost.UseUrls($"http://*:{port}");
+// Настраиваем Kestrel для Railway
+builder.WebHost.UseKestrel(options =>
+{
+    options.ListenAnyIP(int.Parse(railwayPort));
+});
+Console.WriteLine($"✓ Railway environment detected, port: {railwayPort}");
+Console.WriteLine($"✓ Frontend URL: {frontendUrl}");
 
 // Переопределяем строку подключения из Railway
 var railwayDbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
@@ -49,7 +48,7 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.WriteIndented = builder.Environment.IsDevelopment();
     });
 
@@ -89,13 +88,20 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddHttpContextAccessor();
 
 // ========== CORS ==========
+// Конкретная настройка CORS для Netlify и локальной разработки
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", builder =>
+    options.AddPolicy("AllowNetlifyAndLocal", policy =>
     {
-        builder.AllowAnyOrigin()
-               .AllowAnyMethod()
-               .AllowAnyHeader();
+        policy.WithOrigins(
+                "https://clever-basbousa-2c3b30.netlify.app", // Ваш Netlify домен
+                "http://localhost:3000",                       // Локальный фронтенд
+                "http://localhost:3001"
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials()
+            .WithExposedHeaders("Content-Disposition");
     });
 });
 
@@ -105,41 +111,53 @@ var app = builder.Build();
 // Логирование конфигурации
 Console.WriteLine($"=== MetaPl API Configuration ===");
 Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
-Console.WriteLine($"Port: {port}");
+Console.WriteLine($"Port: {railwayPort}");
+Console.WriteLine($"Frontend: {frontendUrl}");
 Console.WriteLine($"Database configured: {!string.IsNullOrEmpty(connectionString)}");
 
 // ========== КОНФИГУРАЦИЯ ПАЙПЛАЙНА ==========
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "MetaPl API v1");
-        c.RoutePrefix = "swagger";
-    });
 }
 else
 {
     app.UseExceptionHandler("/error");
+    app.UseHsts();
 }
 
+// Включаем Swagger всегда для удобства тестирования
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "MetaPl API v1");
+    c.RoutePrefix = "swagger";
+});
+
 app.UseHttpsRedirection();
-app.UseStaticFiles();
-app.UseCors("AllowAll");
+
+// ВАЖНО: CORS должен быть перед UseAuthorization и MapControllers
+app.UseCors("AllowNetlifyAndLocal");
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 // ========== ОСНОВНЫЕ ЭНДПОИНТЫ ==========
-app.MapGet("/", () => "MetaPl API is running");
+app.MapGet("/", () => "MetaPl API is running. Use /swagger for API documentation.");
 app.MapGet("/health", () => Results.Ok(new { 
     status = "Healthy", 
     timestamp = DateTime.UtcNow,
     environment = app.Environment.EnvironmentName,
-    service = "MetaPl API"
+    service = "MetaPl API",
+    frontend = frontendUrl
 }));
+
+// Обработчик ошибок
 app.MapGet("/error", () => Results.Problem("An error occurred"));
 
+// ========== КОНТРОЛЛЕРЫ ==========
 app.MapControllers();
 
 // ========== ЗАПУСК ==========
-Console.WriteLine($"=== Starting MetaPl API on port {port} ===");
+Console.WriteLine($"=== Starting MetaPl API on port {railwayPort} ===");
 app.Run();
