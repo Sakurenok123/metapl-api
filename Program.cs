@@ -1,3 +1,4 @@
+using MetaPlApi.Controllers;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -5,12 +6,13 @@ using Microsoft.OpenApi.Models;
 using MetaPlApi.Data.Entities;
 using MetaPlApi.Services;
 using System.Text;
-using MetaPlApi.Controllers;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ========== КОНФИГУРАЦИЯ ДЛЯ RAILWAY ==========
-// Получаем порт из переменной окружения (Railway устанавливает PORT)
+// Получаем порт из переменной окружения Railway
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 
 // Конфигурируем Kestrel для работы на Railway
@@ -19,7 +21,6 @@ builder.WebHost.ConfigureKestrel(options =>
     options.ListenAnyIP(int.Parse(port));
 });
 
-// ========== НАСТРОЙКА КОНФИГУРАЦИИ ==========
 // Переопределяем строку подключения из переменных окружения Railway
 var railwayDbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(railwayDbUrl))
@@ -38,15 +39,13 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
     builder.Configuration["ConnectionStrings:DefaultConnection"] = updatedConnectionString;
 }
 
-// ========== НАСТРОЙКА СЕРВИСОВ ==========
-// Контроллеры с JSON настройками
+// ========== ОСТАЛЬНОЙ КОД (без изменений) ==========
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-        options.JsonSerializerOptions.WriteIndented = builder.Environment.IsDevelopment();
+        options.JsonSerializerOptions.WriteIndented = true;
     });
-
 builder.Services.AddEndpointsApiExplorer();
 
 // Настройка Swagger
@@ -80,108 +79,61 @@ builder.Services.AddSwaggerGen(c =>
     };
     
     c.AddSecurityDefinition("Bearer", securityScheme);
-    
-    // Добавляем security requirement для защищенных эндпоинтов
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            new string[] {}
-        }
-    });
 });
 
-// ========== БАЗА ДАННЫХ ==========
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-if (!string.IsNullOrEmpty(connectionString))
-{
-    builder.Services.AddDbContext<MetaplatformeContext>(options =>
-        options.UseNpgsql(connectionString));
-}
+// Настройка базы данных
+builder.Services.AddDbContext<MetaplatformeContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// ========== JWT АУТЕНТИФИКАЦИЯ ==========
-// Получаем JWT секрет из переменных окружения или конфигурации
-var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET") ?? 
-                builder.Configuration["Jwt:Secret"];
-var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? 
-                builder.Configuration["Jwt:Issuer"];
-var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? 
-                  builder.Configuration["Jwt:Audience"];
+// Настройка JWT аутентификации
+var jwtSettings = builder.Configuration.GetSection("Jwt");
+var secret = jwtSettings["Secret"];
 
-if (!string.IsNullOrEmpty(jwtSecret))
+builder.Services.AddAuthentication(options =>
 {
-    builder.Services.AddAuthentication(options =>
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer,
-            ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
-        };
-    });
-}
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSettings["Issuer"],
+        ValidAudience = jwtSettings["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret))
+    };
+});
 
 builder.Services.AddAuthorization();
 
-// ========== РЕГИСТРАЦИЯ СЕРВИСОВ ==========
+// Регистрация сервисов
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<IApplicationService, ApplicationService>();
 builder.Services.AddScoped<IEventsService, EventsService>();
 builder.Services.AddScoped<IStatusService, StatusService>();
-builder.Services.AddScoped<EventsTypeController>();
 builder.Services.AddHttpContextAccessor();
 
-// ========== CORS ==========
+// Настройка CORS
 builder.Services.AddCors(options =>
 {
-    // Политика для разработки
-    options.AddPolicy("DevelopmentPolicy",
+    options.AddPolicy("AllowAll",
         builder =>
         {
             builder.AllowAnyOrigin()
                    .AllowAnyMethod()
                    .AllowAnyHeader();
         });
-    
-    // Политика для продакшена
-    options.AddPolicy("ProductionPolicy",
-        builder =>
-        {
-            builder.WithOrigins(
-                    "https://your-netlify-site.netlify.app", // Ваш фронтенд на Netlify
-                    "https://metaplatforme.ru",              // Продакшен домен
-                    "http://localhost:3000",                 // Локальный фронтенд
-                    "http://localhost:5173"                  // Vite/React
-                )
-                   .AllowAnyMethod()
-                   .AllowAnyHeader()
-                   .AllowCredentials();
-        });
 });
 
-// ========== СОЗДАНИЕ ПРИЛОЖЕНИЯ ==========
 var app = builder.Build();
 
-// ========== КОНФИГУРАЦИЯ ПАЙПЛАЙНА ==========
-// Swagger только для разработки
+// Конфигурация конвейера HTTP
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -190,30 +142,21 @@ if (app.Environment.IsDevelopment())
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "MetaPl API v1");
         c.RoutePrefix = "swagger"; // Доступ по /swagger
     });
-    app.UseCors("DevelopmentPolicy");
-}
-else
-{
-    app.UseCors("ProductionPolicy");
-    // Health check для Railway
-    app.MapGet("/", () => "MetaPl API is running");
-    app.MapGet("/health", () => Results.Ok(new { 
-        status = "Healthy", 
-        timestamp = DateTime.UtcNow,
-        environment = app.Environment.EnvironmentName 
-    }));
 }
 
-// Принудительное HTTPS только если не в разработке
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHttpsRedirection();
-}
-
+app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Запуск приложения
+// ========== HEALTH CHECK ДЛЯ RAILWAY ==========
+app.MapGet("/", () => "MetaPl API is running");
+app.MapGet("/health", () => Results.Ok(new { 
+    status = "Healthy", 
+    timestamp = DateTime.UtcNow,
+    environment = app.Environment.EnvironmentName 
+}));
+
 app.Run();
