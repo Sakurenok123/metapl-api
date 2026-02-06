@@ -9,9 +9,6 @@ namespace MetaPlApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-
-
-
     public class AddressesController : ControllerBase
     {
         private readonly MetaplatformeContext _context;
@@ -53,7 +50,6 @@ namespace MetaPlApi.Controllers
             return Ok(ApiResponse<object>.SuccessResponse(cities));
         }
 
-        
         [HttpGet("{id}")]
         public async Task<IActionResult> GetAddressById(int id)
         {
@@ -77,6 +73,7 @@ namespace MetaPlApi.Controllers
         }
         
         [HttpPost]
+        [Authorize]
         public async Task<IActionResult> CreateAddress([FromBody] CreateAddressRequest request)
         {
             if (!ModelState.IsValid)
@@ -113,7 +110,7 @@ namespace MetaPlApi.Controllers
         }
         
         [HttpPut("{id}")]
-
+        [Authorize]
         public async Task<IActionResult> UpdateAddress(int id, [FromBody] UpdateAddressRequest request)
         {
             if (!ModelState.IsValid)
@@ -163,6 +160,7 @@ namespace MetaPlApi.Controllers
         }
         
         [HttpDelete("{id}")]
+        [Authorize]
         public async Task<IActionResult> DeleteAddress(int id)
         {
             var address = await _context.Addresses
