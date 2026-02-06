@@ -1,4 +1,3 @@
-using MetaPlApi.Controllers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using MetaPlApi.Data.Entities;
@@ -15,7 +14,7 @@ builder.WebHost.ConfigureKestrel(options =>
     options.ListenAnyIP(int.Parse(port));
 });
 
-// Переопределяем строку подключения
+// Переопределяем строку подключения из Railway
 var railwayDbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(railwayDbUrl))
 {
@@ -32,11 +31,11 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
                                      "SSL Mode=Require;Trust Server Certificate=true;";
         
         builder.Configuration["ConnectionStrings:DefaultConnection"] = updatedConnectionString;
-        Console.WriteLine($"Database configured from DATABASE_URL");
+        Console.WriteLine($"✓ Database configured from DATABASE_URL");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Error parsing DATABASE_URL: {ex.Message}");
+        Console.WriteLine($"✗ Error parsing DATABASE_URL: {ex.Message}");
     }
 }
 
@@ -57,31 +56,37 @@ builder.Services.AddSwaggerGen(c =>
     { 
         Title = "MetaPl API", 
         Version = "v1",
-        Description = "API для платформы метаплатформ"
+        Description = "API для платформы метаплатформ",
+        Contact = new OpenApiContact
+        {
+            Name = "MetaPl Team",
+            Email = "support@metaplatforme.ru"
+        }
     });
 });
 
 // ========== БАЗА ДАННЫХ ==========
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-Console.WriteLine($"Connection string: {(string.IsNullOrEmpty(connectionString) ? "NOT SET" : "SET")}");
-
 if (!string.IsNullOrEmpty(connectionString))
 {
     builder.Services.AddDbContext<MetaplatformeContext>(options =>
         options.UseNpgsql(connectionString));
+    Console.WriteLine($"✓ Database context registered");
 }
 else
 {
-    Console.WriteLine("WARNING: Database connection string is not set!");
+    Console.WriteLine($"✗ WARNING: Database connection string is not set!");
 }
 
-// ========== СЕРВИСЫ (без JWT) ==========
-builder.Services.AddScoped<IAuthService, AuthService>();
+// ========== СЕРВИСЫ (без аутентификации) ==========
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<IApplicationService, ApplicationService>();
 builder.Services.AddScoped<IEventsService, EventsService>();
 builder.Services.AddScoped<IStatusService, StatusService>();
+// Если AuthService не использует JWT, можно оставить
+builder.Services.AddScoped<IAuthService, AuthService>();
+
 builder.Services.AddHttpContextAccessor();
 
 // ========== CORS ==========
@@ -95,15 +100,16 @@ builder.Services.AddCors(options =>
     });
 });
 
-// ========== ПРИЛОЖЕНИЕ ==========
+// ========== СОЗДАНИЕ ПРИЛОЖЕНИЯ ==========
 var app = builder.Build();
 
 // Логирование конфигурации
+Console.WriteLine($"=== MetaPl API Configuration ===");
 Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
 Console.WriteLine($"Port: {port}");
-Console.WriteLine($"Database URL: {(string.IsNullOrEmpty(railwayDbUrl) ? "NOT SET" : "SET")}");
+Console.WriteLine($"Database configured: {!string.IsNullOrEmpty(connectionString)}");
 
-// Обработка ошибок
+// ========== КОНФИГУРАЦИЯ ПАЙПЛАЙНА ==========
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
@@ -123,17 +129,18 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseCors("AllowAll");
 
-// ========== ЭНДПОИНТЫ ==========
+// ========== ОСНОВНЫЕ ЭНДПОИНТЫ ==========
 app.MapGet("/", () => "MetaPl API is running");
 app.MapGet("/health", () => Results.Ok(new { 
     status = "Healthy", 
     timestamp = DateTime.UtcNow,
-    environment = app.Environment.EnvironmentName 
+    environment = app.Environment.EnvironmentName,
+    service = "MetaPl API"
 }));
 app.MapGet("/error", () => Results.Problem("An error occurred"));
 
 app.MapControllers();
 
-// Запуск
-Console.WriteLine($"Starting application on port {port}...");
+// ========== ЗАПУСК ==========
+Console.WriteLine($"=== Starting MetaPl API on port {port} ===");
 app.Run();
