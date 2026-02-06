@@ -10,21 +10,18 @@ var builder = WebApplication.CreateBuilder(args);
 var railwayPort = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 Console.WriteLine($"🚀 Railway port: {railwayPort}");
 
-// 1. Сначала проверим переменные окружения
+// Проверяем переменные окружения
 Console.WriteLine("=== Environment Variables ===");
-Console.WriteLine($"DATABASE_URL exists: {!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DATABASE_URL"))}");
-Console.WriteLine($"RAILWAY_ENVIRONMENT: {Environment.GetEnvironmentVariable("RAILWAY_ENVIRONMENT")}");
+var railwayDbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+Console.WriteLine($"DATABASE_URL exists: {!string.IsNullOrEmpty(railwayDbUrl)}");
 
-// 2. Получаем строку подключения из DATABASE_URL
 string connectionString = "";
 
-var railwayDbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(railwayDbUrl))
 {
-    Console.WriteLine($"🔗 Found DATABASE_URL: {railwayDbUrl.Substring(0, Math.Min(railwayDbUrl.Length, 50))}...");
-    
     try
     {
+        // Преобразуем DATABASE_URL в строку подключения для Npgsql
         var uri = new Uri(railwayDbUrl);
         var userInfo = uri.UserInfo.Split(':');
         
@@ -35,7 +32,7 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
                          $"Port={uri.Port};" +
                          "SSL Mode=Require;Trust Server Certificate=true;";
         
-        Console.WriteLine($"✅ Database connection string configured");
+        Console.WriteLine($"✅ Database connection configured");
         Console.WriteLine($"📊 Host: {uri.Host}");
         Console.WriteLine($"📊 Database: {uri.AbsolutePath.TrimStart('/')}");
         Console.WriteLine($"📊 Username: {userInfo[0]}");
@@ -43,16 +40,13 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
     catch (Exception ex)
     {
         Console.WriteLine($"❌ Error parsing DATABASE_URL: {ex.Message}");
+        connectionString = "Host=localhost;Database=test;Username=postgres;Password=1234";
     }
 }
 else
 {
-    Console.WriteLine("❌ DATABASE_URL not found in environment variables");
-    Console.WriteLine("📋 Available environment variables:");
-    foreach (var key in Environment.GetEnvironmentVariables().Keys)
-    {
-        Console.WriteLine($"  {key}");
-    }
+    Console.WriteLine($"⚠️  DATABASE_URL not found, using default connection");
+    connectionString = "Host=localhost;Database=test;Username=postgres;Password=1234";
 }
 
 // Основные сервисы
@@ -69,34 +63,25 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo 
     { 
         Title = "MetaPl API", 
-        Version = "v1",
-        Description = "API для платформы метаплатформ"
+        Version = "v1" 
     });
 });
 
 // База данных
-if (!string.IsNullOrEmpty(connectionString))
+Console.WriteLine($"🔌 Registering database with connection string");
+builder.Services.AddDbContext<MetaplatformeContext>(options =>
 {
-    Console.WriteLine($"🔌 Registering database context with connection string");
-    builder.Services.AddDbContext<MetaplatformeContext>(options =>
-    {
-        options.UseNpgsql(connectionString);
-        options.EnableSensitiveDataLogging(true); // Для отладки
-    });
-}
-else
-{
-    Console.WriteLine($"⚠️  No database connection string. Using in-memory database for testing.");
-    // Не добавляем базу данных вообще, будем работать без нее
-}
+    options.UseNpgsql(connectionString);
+    options.LogTo(Console.WriteLine, Microsoft.Extensions.Logging.LogLevel.Information);
+});
 
 // Сервисы
-builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IApplicationService, ApplicationService>();
 builder.Services.AddScoped<IEventsService, EventsService>();
 builder.Services.AddScoped<IStatusService, StatusService>();
-builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddHttpContextAccessor();
 
 // CORS
@@ -129,7 +114,7 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-// Отключаем HTTPS редирект для Railway (они сами обрабатывают SSL)
+// Отключаем HTTPS редирект для Railway
 // app.UseHttpsRedirection();
 
 app.UseAuthorization();
@@ -155,25 +140,5 @@ app.MapGet("/health", () => Results.Ok(new
     version = "1.0"
 }));
 
-// Проверка переменных окружения
-app.MapGet("/env", () =>
-{
-    var envVars = new Dictionary<string, string?>();
-    foreach (System.Collections.DictionaryEntry de in Environment.GetEnvironmentVariables())
-    {
-        if (de.Key.ToString()?.Contains("DATABASE") == true || 
-            de.Key.ToString()?.Contains("RAILWAY") == true ||
-            de.Key.ToString()?.Contains("URL") == true ||
-            de.Key.ToString()?.Contains("PORT") == true)
-        {
-            envVars[de.Key.ToString()!] = de.Value?.ToString();
-        }
-    }
-    return Results.Ok(envVars);
-});
-
 Console.WriteLine($"=== MetaPl API Starting on port {railwayPort} ===");
-Console.WriteLine($"=== Environment: {app.Environment.EnvironmentName} ===");
-Console.WriteLine($"=== Database: {(string.IsNullOrEmpty(connectionString) ? "Not configured" : "Configured")} ===");
-
 app.Run();
