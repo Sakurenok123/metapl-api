@@ -6,13 +6,19 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Конфигурация для Railway
+// ========== КОНФИГУРАЦИЯ ДЛЯ RAILWAY ==========
+// Получаем URL фронтенда
+var frontendUrl = "https://clever-basbousa-2c3b30.netlify.app";
 var railwayPort = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-builder.WebHost.UseUrls($"http://*:{railwayPort}");
 
-Console.WriteLine($"Starting on port: {railwayPort}");
+// Удалите UseUrls, используйте только Kestrel
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(int.Parse(railwayPort));
+});
+Console.WriteLine($"✓ Railway port: {railwayPort}");
 
-// База данных
+// Переопределяем строку подключения из Railway
 var railwayDbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 if (!string.IsNullOrEmpty(railwayDbUrl))
 {
@@ -29,7 +35,7 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
                                      "SSL Mode=Require;Trust Server Certificate=true;";
         
         builder.Configuration["ConnectionStrings:DefaultConnection"] = updatedConnectionString;
-        Console.WriteLine($"✓ Database configured");
+        Console.WriteLine($"✓ Database configured from DATABASE_URL");
     }
     catch (Exception ex)
     {
@@ -37,7 +43,7 @@ if (!string.IsNullOrEmpty(railwayDbUrl))
     }
 }
 
-// Основные сервисы
+// ========== ОСНОВНЫЕ СЕРВИСЫ ==========
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -46,16 +52,19 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddEndpointsApiExplorer();
+
+// Swagger
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo 
     { 
         Title = "MetaPl API", 
-        Version = "v1" 
+        Version = "v1",
+        Description = "API для платформы метаплатформ"
     });
 });
 
-// База данных
+// ========== БАЗА ДАННЫХ ==========
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {
@@ -65,13 +74,11 @@ if (!string.IsNullOrEmpty(connectionString))
 }
 else
 {
-    Console.WriteLine($"✗ WARNING: No database connection string!");
-    builder.Services.AddDbContext<MetaplatformeContext>(options =>
-        options.UseInMemoryDatabase("TestDb"));
-    Console.WriteLine($"✓ Using in-memory database for testing");
+    Console.WriteLine($"✗ WARNING: Database connection string is not set!");
+    // Не добавляем InMemoryDatabase - только предупреждение
 }
 
-// Сервисы
+// ========== СЕРВИСЫ ==========
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<IApplicationService, ApplicationService>();
@@ -80,7 +87,7 @@ builder.Services.AddScoped<IStatusService, StatusService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddHttpContextAccessor();
 
-// CORS - разрешаем всё для тестирования
+// ========== CORS ==========
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -91,33 +98,56 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Создание приложения
+// ========== СОЗДАНИЕ ПРИЛОЖЕНИЯ ==========
 var app = builder.Build();
 
-// Middleware
+// Логирование конфигурации
+Console.WriteLine($"=== MetaPl API Configuration ===");
+Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
+Console.WriteLine($"Port: {railwayPort}");
+Console.WriteLine($"Database configured: {!string.IsNullOrEmpty(connectionString)}");
+
+// ========== КОНФИГУРАЦИЯ ПАЙПЛАЙНА ==========
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "MetaPl API v1");
+        c.RoutePrefix = "swagger";
+    });
+}
+else
+{
+    app.UseExceptionHandler("/error");
+    app.UseHsts();
+    
+    // Включаем Swagger даже в production для тестирования
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "MetaPl API v1");
+        c.RoutePrefix = "swagger";
+    });
 }
 
-app.UseSwagger();
-app.UseSwaggerUI(c =>
-{
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "MetaPl API v1");
-    c.RoutePrefix = "swagger";
-});
-
 app.UseHttpsRedirection();
-
-// CORS должен быть здесь
+app.UseStaticFiles();
 app.UseCors("AllowAll");
 
-app.UseAuthorization();
+// ========== ОСНОВНЫЕ ЭНДПОИНТЫ ==========
+app.MapGet("/", () => "MetaPl API is running");
+app.MapGet("/health", () => Results.Ok(new { 
+    status = "Healthy", 
+    timestamp = DateTime.UtcNow,
+    environment = app.Environment.EnvironmentName,
+    service = "MetaPl API"
+}));
+app.MapGet("/error", () => Results.Problem("An error occurred"));
+
 app.MapControllers();
 
-// Тестовый endpoint
-app.MapGet("/", () => "MetaPl API is running!");
-app.MapGet("/test", () => new { status = "OK", time = DateTime.UtcNow });
-
-Console.WriteLine("=== MetaPl API Starting ===");
+// ========== ЗАПУСК ==========
+Console.WriteLine($"=== Starting MetaPl API ===");
 app.Run();
