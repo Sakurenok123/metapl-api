@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["dotnet-sdk_9"]
+
+[phases.build]
+cmds = ["dotnet restore", "dotnet publish -c Release -o /app"]
+
+[phases.install]
+cmds = []
+
+[start]
+cmd = "dotnet /app/MetaPlApi.dll"
