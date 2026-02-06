@@ -22,7 +22,6 @@ namespace MetaPlApi.Controllers
         /// Создать запись фото по URL (ссылке в интернете).
         /// </summary>
         [HttpPost]
-        [Authorize]
         public async Task<IActionResult> CreateByUrl([FromBody] CreatePhotoRequest request)
         {
             if (string.IsNullOrWhiteSpace(request?.Name))
@@ -39,7 +38,6 @@ namespace MetaPlApi.Controllers
         /// Загрузить файл с компьютера и создать запись фото.
         /// </summary>
         [HttpPost("upload")]
-        [Authorize]
         public async Task<IActionResult> Upload(IFormFile file)
         {
             if (file == null || file.Length == 0)
