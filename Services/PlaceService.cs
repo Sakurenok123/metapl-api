@@ -18,7 +18,6 @@ namespace MetaPlApi.Services
         {
             try
             {
-                // Просто берем первые 6 мест
                 var places = await _context.Places
                     .Take(limit)
                     .Include(p => p.Address)
@@ -205,8 +204,6 @@ namespace MetaPlApi.Services
             }
         }
         
-        // Остальные методы оставляем как были...
-        
         public async Task<ApiResponse<List<PlaceResponse>>> SearchPlacesAsync(string term)
         {
             try
@@ -222,9 +219,9 @@ namespace MetaPlApi.Services
                     .Include(p => p.EquipmentsPlaces).ThenInclude(ep => ep.Equipment)
                     .Include(p => p.CharacteristicsPlaces).ThenInclude(cp => cp.Characteristic)
                     .Include(p => p.PhotoPlaces).ThenInclude(pp => pp.Photo)
-                    .Where(p => p.Name.Contains(term) ||
-                                (p.Address != null && p.Address.City.Contains(term)) ||
-                                (p.Address != null && p.Address.Street.Contains(term)))
+                    .Where(p => p.Name != null && p.Name.Contains(term) ||
+                                (p.Address != null && p.Address.City != null && p.Address.City.Contains(term)) ||
+                                (p.Address != null && p.Address.Street != null && p.Address.Street.Contains(term)))
                     .OrderBy(p => p.Name)
                     .Take(50)
                     .ToListAsync();
@@ -280,8 +277,6 @@ namespace MetaPlApi.Services
                 return ApiResponse<List<PlaceResponse>>.ErrorResponse($"Ошибка при поиске мест: {ex.Message}");
             }
         }
-        
-        // Остальные методы можно добавить позже, когда базовые заработают
         
         public async Task<ApiResponse<PlaceResponse>> CreatePlaceAsync(CreatePlaceRequest request)
         {
